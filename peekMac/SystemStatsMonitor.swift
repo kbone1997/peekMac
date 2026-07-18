@@ -73,12 +73,177 @@ class SystemStatsMonitor: ObservableObject {
         return totalUsage / Double(processorCount)
     }
     
-    // 2. CPU Temperature Dynamic Profiler
+    // 2. CPU Temperature SMC Reader / Fallback Profiler
     private func getCPUTemperature() -> Int {
+        if let connection = openSMC() {
+            defer { closeSMC(connection) }
+            
+            // Candidate keys for Intel and Apple Silicon Macs
+            let keys = ["TCMz", "TC0D", "TC0P", "TC0H", "T0P", "Tp09"]
+            
+            for keyStr in keys {
+                let key = getSMCKey(keyStr)
+                if let keyInfo = getSMCKeyInfo(connection: connection, key: key) {
+                    if let bytes = readSMCValue(connection: connection, key: key, keyInfo: keyInfo) {
+                        if let temp = parseTemperature(bytes: bytes, type: keyInfo.dataType) {
+                            if temp > 10.0 && temp < 120.0 {
+                                return Int(round(temp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback: heuristic math model based on CPU load if SMC read fails (e.g. sandbox or unsupported architecture)
         let baseTemp = 38.0
         let currentLoadFactor = (cpuUsage / 100.0) * 36.0
         return Int(baseTemp + currentLoadFactor)
     }
+    
+    // MARK: - SMC Private Helpers & Structures
+    
+    private struct SMCVersion {
+        var major: UInt8 = 0
+        var minor: UInt8 = 0
+        var build: UInt8 = 0
+        var reserved: UInt8 = 0
+        var release: UInt16 = 0
+    }
+    
+    private struct SMCPLimitData {
+        var version: UInt16 = 0
+        var length: UInt16 = 0
+        var cpuPLimit: UInt32 = 0
+        var gpuPLimit: UInt32 = 0
+        var memPLimit: UInt32 = 0
+    }
+    
+    private struct SMCKeyInfoData {
+        var dataSize: UInt32 = 0
+        var dataType: UInt32 = 0
+        var dataAttributes: UInt8 = 0
+    }
+    
+    private struct SMCParamStruct {
+        var key: UInt32 = 0
+        var vers = SMCVersion()
+        var pLimitData = SMCPLimitData()
+        var keyInfo = SMCKeyInfoData()
+        var padding: UInt16 = 0
+        var result: UInt8 = 0
+        var status: UInt8 = 0
+        var data8: UInt8 = 0
+        var data32: UInt32 = 0
+        var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+    }
+    
+    private func getSMCKey(_ keyString: String) -> UInt32 {
+        guard keyString.count == 4 else { return 0 }
+        var value: UInt32 = 0
+        for char in keyString.utf8 {
+            value = (value << 8) + UInt32(char)
+        }
+        return value
+    }
+    
+    private func openSMC() -> io_connect_t? {
+        let matchingService = IOServiceMatching("AppleSMC")
+        let service = IOServiceGetMatchingService(0, matchingService)
+        guard service != 0 else { return nil }
+        
+        var connection: io_connect_t = 0
+        let result = IOServiceOpen(service, mach_task_self_, 0, &connection)
+        IOObjectRelease(service)
+        
+        guard result == kIOReturnSuccess else { return nil }
+        return connection
+    }
+    
+    private func closeSMC(_ connection: io_connect_t) {
+        IOServiceClose(connection)
+    }
+    
+    private func getSMCKeyInfo(connection: io_connect_t, key: UInt32) -> SMCKeyInfoData? {
+        var input = SMCParamStruct()
+        input.key = key
+        input.data8 = 9 // kSMCGetKeyInfo
+        
+        var output = SMCParamStruct()
+        var outputSize = MemoryLayout<SMCParamStruct>.stride
+        
+        let result = IOConnectCallStructMethod(
+            connection,
+            2, // selector: kSMCHandleYPCEvent
+            &input,
+            MemoryLayout<SMCParamStruct>.stride,
+            &output,
+            &outputSize
+        )
+        
+        if result == kIOReturnSuccess && output.result == 0 {
+            return output.keyInfo
+        }
+        return nil
+    }
+    
+    private func readSMCValue(connection: io_connect_t, key: UInt32, keyInfo: SMCKeyInfoData) -> [UInt8]? {
+        var input = SMCParamStruct()
+        input.key = key
+        input.keyInfo = keyInfo
+        input.data8 = 5 // kSMCReadKey
+        
+        var output = SMCParamStruct()
+        var outputSize = MemoryLayout<SMCParamStruct>.stride
+        
+        let result = IOConnectCallStructMethod(
+            connection,
+            2, // selector: kSMCHandleYPCEvent
+            &input,
+            MemoryLayout<SMCParamStruct>.stride,
+            &output,
+            &outputSize
+        )
+        
+        if result == kIOReturnSuccess && output.result == 0 {
+            let size = Int(keyInfo.dataSize)
+            return withUnsafePointer(to: output.bytes) { ptr -> [UInt8] in
+                ptr.withMemoryRebound(to: UInt8.self, capacity: 32) { bytePtr in
+                    Array(UnsafeBufferPointer(start: bytePtr, count: size))
+                }
+            }
+        }
+        return nil
+    }
+    
+    private func parseTemperature(bytes: [UInt8], type: UInt32) -> Double? {
+        if type == 0x73703738 && bytes.count >= 2 { // sp78
+            let sign = (bytes[0] & 0x80) != 0
+            var value = Int(bytes[0] & 0x7F) << 8 | Int(bytes[1])
+            if sign {
+                value = -value
+            }
+            return Double(value) / 256.0
+        } else if type == 0x666c7420 && bytes.count >= 4 { // flt 
+            var floatVal: Float = 0.0
+            let data = Data(bytes)
+            floatVal = data.withUnsafeBytes { $0.load(as: Float.self) }
+            return Double(floatVal)
+        } else if type == 0x66706532 && bytes.count >= 2 { // fpe2
+            let value = Int(bytes[0]) << 8 | Int(bytes[1])
+            return Double(value) / 4.0
+        } else if type == 0x75693136 && bytes.count >= 2 { // ui16
+            let value = Int(bytes[0]) << 8 | Int(bytes[1])
+            return Double(value)
+        } else if type == 0x75693820 && bytes.count >= 1 { // ui8
+            return Double(bytes[0])
+        }
+        return nil
+    }
+
     
     // 3. RAM Usage Calculation
     private func getRAMUsage() -> Double {
