@@ -162,13 +162,15 @@ struct StatusBarLabel: View {
 
     // MARK: Threshold colours
     private var cpuUsageColor: Color {
-        if statsMonitor.cpuUsage >= 90 { return .red }
-        if statsMonitor.cpuUsage >= 50 { return .yellow }
+        guard let usage = statsMonitor.cpuUsage else { return .secondary }
+        if usage >= 90 { return .red }
+        if usage >= 50 { return .yellow }
         return .primary
     }
     private var cpuTempColor: Color {
-        if statsMonitor.cpuTemperature >= 90 { return .red }
-        if statsMonitor.cpuTemperature >= 50 { return .yellow }
+        guard let temp = statsMonitor.cpuTemperature else { return .secondary }
+        if temp >= 90 { return .red }
+        if temp >= 50 { return .yellow }
         return .primary
     }
     /// When both CPU usage and temp are shown together, pick the more severe colour.
@@ -179,18 +181,21 @@ struct StatusBarLabel: View {
         return .primary
     }
     private var ramColor: Color {
-        if statsMonitor.ramUsage >= 90 { return .red }
-        if statsMonitor.ramUsage >= 50 { return .yellow }
+        guard let usage = statsMonitor.ramUsage else { return .secondary }
+        if usage >= 90 { return .red }
+        if usage >= 50 { return .yellow }
         return .primary
     }
     private var gpuColor: Color {
-        if statsMonitor.gpuUsage >= 90 { return .red }
-        if statsMonitor.gpuUsage >= 50 { return .yellow }
+        guard let usage = statsMonitor.gpuUsage else { return .secondary }
+        if usage >= 90 { return .red }
+        if usage >= 50 { return .yellow }
         return .primary
     }
     private var batteryColor: Color {
-        if statsMonitor.batteryTemperature >= 40 { return .red }
-        if statsMonitor.batteryTemperature >= 35 { return .yellow }
+        guard let temp = statsMonitor.batteryTemperature else { return .secondary }
+        if temp >= 40 { return .red }
+        if temp >= 35 { return .yellow }
         return .primary
     }
 
@@ -199,13 +204,17 @@ struct StatusBarLabel: View {
             if cpuActive {
                 Image(systemName: "cpu")
                 if showBothCpu {
-                    Text("\(String(format: "%.0f", statsMonitor.cpuUsage))% \(statsMonitor.cpuTemperature)°C")
+                    let usageStr = statsMonitor.cpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.cpuUsage!))%" : "N/A"
+                    let tempStr = statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "N/A"
+                    Text("\(usageStr) \(tempStr)")
                         .foregroundColor(cpuCombinedColor)
                 } else if activeModes.contains(.cpuUsage) {
-                    Text("\(String(format: "%.0f", statsMonitor.cpuUsage))%")
+                    let usageStr = statsMonitor.cpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.cpuUsage!))%" : "N/A"
+                    Text(usageStr)
                         .foregroundColor(cpuUsageColor)
                 } else {
-                    Text("\(statsMonitor.cpuTemperature)°C")
+                    let tempStr = statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "N/A"
+                    Text(tempStr)
                         .foregroundColor(cpuTempColor)
                 }
             }
@@ -213,21 +222,24 @@ struct StatusBarLabel: View {
             if ramActive {
                 if cpuActive { divider }
                 Image(systemName: "memorychip")
-                Text("\(String(format: "%.0f", statsMonitor.ramUsage))%")
+                let ramStr = statsMonitor.ramUsage != nil ? "\(String(format: "%.0f", statsMonitor.ramUsage!))%" : "N/A"
+                Text(ramStr)
                     .foregroundColor(ramColor)
             }
 
             if gpuActive {
                 if cpuActive || ramActive { divider }
                 Image(systemName: "square.grid.3x3.topleft.filled")
-                Text("\(String(format: "%.0f", statsMonitor.gpuUsage))%")
+                let gpuStr = statsMonitor.gpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.gpuUsage!))%" : "N/A"
+                Text(gpuStr)
                     .foregroundColor(gpuColor)
             }
 
             if batteryActive {
                 if cpuActive || ramActive || gpuActive { divider }
                 Image(systemName: "battery.100")
-                Text("\(String(format: "%.1f", statsMonitor.batteryTemperature))°C")
+                let battStr = statsMonitor.batteryTemperature != nil ? "\(String(format: "%.1f", statsMonitor.batteryTemperature!))°C" : "N/A"
+                Text(battStr)
                     .foregroundColor(batteryColor)
             }
         }
@@ -255,11 +267,11 @@ struct StatsPanel: View {
             Divider()
 
             Group {
-                statRow("CPU Usage",   value: "\(String(format: "%.1f", statsMonitor.cpuUsage))%")
-                statRow("CPU Temp",    value: "\(statsMonitor.cpuTemperature)°C")
-                statRow("RAM Usage",   value: "\(String(format: "%.1f", statsMonitor.ramUsage))%")
-                statRow("GPU Usage",   value: "\(String(format: "%.1f", statsMonitor.gpuUsage))%")
-                statRow("Battery Temp",value: "\(String(format: "%.1f", statsMonitor.batteryTemperature))°C")
+                statRow("CPU Usage",   value: statsMonitor.cpuUsage != nil ? "\(String(format: "%.1f", statsMonitor.cpuUsage!))%" : "Failed to fetch")
+                statRow("CPU Temp",    value: statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "Failed to fetch")
+                statRow("RAM Usage",   value: statsMonitor.ramUsage != nil ? "\(String(format: "%.1f", statsMonitor.ramUsage!))%" : "Failed to fetch")
+                statRow("GPU Usage",   value: statsMonitor.gpuUsage != nil ? "\(String(format: "%.1f", statsMonitor.gpuUsage!))%" : "Failed to fetch")
+                statRow("Battery Temp",value: statsMonitor.batteryTemperature != nil ? "\(String(format: "%.1f", statsMonitor.batteryTemperature!))°C" : "Failed to fetch")
             }
 
             Divider()

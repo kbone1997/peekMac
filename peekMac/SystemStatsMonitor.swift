@@ -4,11 +4,11 @@ import IOKit
 import Combine
 
 class SystemStatsMonitor: ObservableObject {
-    @Published var cpuUsage: Double
-    @Published var cpuTemperature: Int
-    @Published var ramUsage: Double
-    @Published var gpuUsage: Double
-    @Published var batteryTemperature: Double
+    @Published var cpuUsage: Double?
+    @Published var cpuTemperature: Int?
+    @Published var ramUsage: Double?
+    @Published var gpuUsage: Double?
+    @Published var batteryTemperature: Double?
     
     private var timer: Timer?
     private var prevCpuInfo: processor_info_array_t?
@@ -16,11 +16,11 @@ class SystemStatsMonitor: ObservableObject {
     
     init() {
         // Phase 1: Provide concrete primitive values to all stored properties first
-        self.cpuUsage = 0.0
-        self.cpuTemperature = 0
-        self.ramUsage = 0.0
-        self.gpuUsage = 0.0
-        self.batteryTemperature = 0.0
+        self.cpuUsage = nil
+        self.cpuTemperature = nil
+        self.ramUsage = nil
+        self.gpuUsage = nil
+        self.batteryTemperature = nil
         
         self.prevCpuInfo = nil
         self.prevCpuInfoCount = 0
@@ -44,15 +44,16 @@ class SystemStatsMonitor: ObservableObject {
     }
     
     // 1. CPU Usage Calculation
-    private func getCPUUsage() -> Double {
+    private func getCPUUsage() -> Double? {
         var processorInfo: processor_info_array_t?
         var processorMsgCount: mach_msg_type_number_t = 0
         var processorCount: natural_t = 0
         
         let result = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &processorCount, &processorInfo, &processorMsgCount)
-        guard result == KERN_SUCCESS, let cpuInfo = processorInfo else { return 0.0 }
+        guard result == KERN_SUCCESS, let cpuInfo = processorInfo else { return nil }
         
         var totalUsage: Double = 0.0
+        var hasHistory = false
         if let prevInfo = prevCpuInfo {
             for i in 0..<Int(processorCount) {
                 let base = i * Int(CPU_STATE_MAX)
@@ -66,15 +67,16 @@ class SystemStatsMonitor: ObservableObject {
                 if total > 0 { totalUsage += (active / total) * 100.0 }
             }
             vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prevInfo), vm_size_t(prevCpuInfoCount))
+            hasHistory = true
         }
         
         prevCpuInfo = cpuInfo
         prevCpuInfoCount = processorMsgCount
-        return totalUsage / Double(processorCount)
+        return hasHistory ? (totalUsage / Double(processorCount)) : nil
     }
     
-    // 2. CPU Temperature SMC Reader / Fallback Profiler
-    private func getCPUTemperature() -> Int {
+    // 2. CPU Temperature SMC Reader
+    private func getCPUTemperature() -> Int? {
         if let connection = openSMC() {
             defer { closeSMC(connection) }
             
@@ -94,11 +96,7 @@ class SystemStatsMonitor: ObservableObject {
                 }
             }
         }
-        
-        // Fallback: heuristic math model based on CPU load if SMC read fails (e.g. sandbox or unsupported architecture)
-        let baseTemp = 38.0
-        let currentLoadFactor = (cpuUsage / 100.0) * 36.0
-        return Int(baseTemp + currentLoadFactor)
+        return nil
     }
     
     // MARK: - SMC Private Helpers & Structures
@@ -246,7 +244,7 @@ class SystemStatsMonitor: ObservableObject {
 
     
     // 3. RAM Usage Calculation
-    private func getRAMUsage() -> Double {
+    private func getRAMUsage() -> Double? {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         
@@ -255,7 +253,7 @@ class SystemStatsMonitor: ObservableObject {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
-        guard result == KERN_SUCCESS else { return 0.0 }
+        guard result == KERN_SUCCESS else { return nil }
         
         let pageSize = UInt64(vm_kernel_page_size)
         let active = UInt64(stats.active_count) * pageSize
@@ -268,15 +266,11 @@ class SystemStatsMonitor: ObservableObject {
     }
     
     // 4. GPU Engine Usage Calculation via IOKit PerformanceStatistics
-    private func getGPUUsage() -> Double {
+    private func getGPUUsage() -> Double? {
         let matchingDict = IOServiceMatching("IOAccelerator")
         var iterator: io_iterator_t = 0
         let result = IOServiceGetMatchingServices(0, matchingDict, &iterator)
-        guard result == kIOReturnSuccess, iterator != 0 else {
-            // Fallback if registry query fails
-            let baseGpuLoad = cpuUsage * 0.45
-            return min(max(baseGpuLoad, 2.0), 99.0)
-        }
+        guard result == kIOReturnSuccess, iterator != 0 else { return nil }
         defer { IOObjectRelease(iterator) }
         
         var service = IOIteratorNext(iterator)
@@ -302,14 +296,11 @@ class SystemStatsMonitor: ObservableObject {
         if found {
             return min(max(usage, 0.0), 100.0)
         }
-        
-        // Fallback if statistics not found
-        let baseGpuLoad = cpuUsage * 0.45
-        return min(max(baseGpuLoad, 2.0), 99.0)
+        return nil
     }
     
     // 5. Battery Temperature via Native IOKit
-    private func getBatteryTemperature() -> Double {
+    private func getBatteryTemperature() -> Double? {
         // 0 represents the primary Mach platform IO root port mapping
         let matchingService = IOServiceMatching("AppleSmartBattery")
         let service = IOServiceGetMatchingService(0, matchingService)
@@ -323,7 +314,7 @@ class SystemStatsMonitor: ObservableObject {
             }
             IOObjectRelease(service)
         }
-        return 29.5 // Fallback if operating a desktop Mac without an internal battery cell
+        return nil
     }
     
 }
