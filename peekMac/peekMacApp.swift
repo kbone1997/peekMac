@@ -164,19 +164,19 @@ struct StatusBarLabel: View {
     private var cpuUsageColor: Color {
         guard let usage = statsMonitor.cpuUsage else { return .secondary }
         if usage >= 90 { return .red }
-        if usage >= 50 { return .yellow }
+        if usage >= 80 { return .yellow }
         return .primary
     }
     private var cpuTempColor: Color {
         guard let temp = statsMonitor.cpuTemperature else { return .secondary }
         if temp >= 90 { return .red }
-        if temp >= 50 { return .yellow }
+        if temp >= 70 { return .yellow }
         return .primary
     }
     private var ramColor: Color {
         guard let usage = statsMonitor.ramUsage else { return .secondary }
-        if usage >= 90 { return .red }
-        if usage >= 50 { return .yellow }
+        if usage >= 95 { return .red }
+        if usage >= 80 { return .yellow }
         return .primary
     }
     private var gpuColor: Color {
