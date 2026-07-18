@@ -78,8 +78,8 @@ class SystemStatsMonitor: ObservableObject {
         if let connection = openSMC() {
             defer { closeSMC(connection) }
             
-            // Candidate keys for Intel and Apple Silicon Macs
-            let keys = ["TCMz", "TC0D", "TC0P", "TC0H", "T0P", "Tp09"]
+            // Candidate keys for Apple Silicon Macs
+            let keys = ["TCMz", "Tp09", "Tp0T"]
             
             for keyStr in keys {
                 let key = getSMCKey(keyStr)
