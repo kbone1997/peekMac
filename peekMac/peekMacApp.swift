@@ -173,13 +173,6 @@ struct StatusBarLabel: View {
         if temp >= 50 { return .yellow }
         return .primary
     }
-    /// When both CPU usage and temp are shown together, pick the more severe colour.
-    private var cpuCombinedColor: Color {
-        let colors = [cpuUsageColor, cpuTempColor]
-        if colors.contains(.red)    { return .red }
-        if colors.contains(.yellow) { return .yellow }
-        return .primary
-    }
     private var ramColor: Color {
         guard let usage = statsMonitor.ramUsage else { return .secondary }
         if usage >= 90 { return .red }
@@ -206,9 +199,12 @@ struct StatusBarLabel: View {
                 if showBothCpu {
                     let usageStr = statsMonitor.cpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.cpuUsage!))%" : "N/A"
                     let tempStr = statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "N/A"
-                    Text("\(usageStr) \(tempStr)")
-                        .foregroundColor(cpuCombinedColor)
-                        .frame(width: 56, alignment: .leading)
+                    Text(usageStr)
+                        .foregroundColor(cpuUsageColor)
+                        .frame(width: 30, alignment: .leading)
+                    Text(tempStr)
+                        .foregroundColor(cpuTempColor)
+                        .frame(width: 34, alignment: .leading)
                 } else if activeModes.contains(.cpuUsage) {
                     let usageStr = statsMonitor.cpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.cpuUsage!))%" : "N/A"
                     Text(usageStr)
