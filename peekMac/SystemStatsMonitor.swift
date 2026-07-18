@@ -267,9 +267,43 @@ class SystemStatsMonitor: ObservableObject {
         return (usedMemory / totalMemory) * 100.0
     }
     
-    // 4. GPU Engine Usage Estimator
+    // 4. GPU Engine Usage Calculation via IOKit PerformanceStatistics
     private func getGPUUsage() -> Double {
-        // Reads from low-level display pipeline load averages
+        let matchingDict = IOServiceMatching("IOAccelerator")
+        var iterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(0, matchingDict, &iterator)
+        guard result == kIOReturnSuccess, iterator != 0 else {
+            // Fallback if registry query fails
+            let baseGpuLoad = cpuUsage * 0.45
+            return min(max(baseGpuLoad, 2.0), 99.0)
+        }
+        defer { IOObjectRelease(iterator) }
+        
+        var service = IOIteratorNext(iterator)
+        var usage: Double = 0.0
+        var found = false
+        
+        while service != 0 {
+            if !found {
+                if let stats = IORegistryEntryCreateCFProperty(service, "PerformanceStatistics" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? [String: Any] {
+                    if let devUtil = stats["Device Utilization %"] as? NSNumber {
+                        usage = devUtil.doubleValue
+                        found = true
+                    } else if let renderUtil = stats["Renderer Utilization %"] as? NSNumber {
+                        usage = renderUtil.doubleValue
+                        found = true
+                    }
+                }
+            }
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
+        }
+        
+        if found {
+            return min(max(usage, 0.0), 100.0)
+        }
+        
+        // Fallback if statistics not found
         let baseGpuLoad = cpuUsage * 0.45
         return min(max(baseGpuLoad, 2.0), 99.0)
     }
