@@ -30,7 +30,7 @@ class SystemStatsMonitor: ObservableObject {
         updateStats()
         
         // Set up the scheduled timer safely using a weak reference to self
-        self.timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        self.timer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: true) { [weak self] _ in
             self?.updateStats()
         }
     }

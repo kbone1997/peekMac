@@ -45,8 +45,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         buildPopover()
 
-        // Refresh the label every 2 s to match the stats update interval
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+        // Refresh the label every 4 s to match the stats update interval
+        Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
             self?.refreshLabel()
         }
     }
@@ -208,14 +208,17 @@ struct StatusBarLabel: View {
                     let tempStr = statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "N/A"
                     Text("\(usageStr) \(tempStr)")
                         .foregroundColor(cpuCombinedColor)
+                        .frame(width: 56, alignment: .leading)
                 } else if activeModes.contains(.cpuUsage) {
                     let usageStr = statsMonitor.cpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.cpuUsage!))%" : "N/A"
                     Text(usageStr)
                         .foregroundColor(cpuUsageColor)
+                        .frame(width: 30, alignment: .leading)
                 } else {
                     let tempStr = statsMonitor.cpuTemperature != nil ? "\(statsMonitor.cpuTemperature!)°C" : "N/A"
                     Text(tempStr)
                         .foregroundColor(cpuTempColor)
+                        .frame(width: 34, alignment: .leading)
                 }
             }
 
@@ -225,6 +228,7 @@ struct StatusBarLabel: View {
                 let ramStr = statsMonitor.ramUsage != nil ? "\(String(format: "%.0f", statsMonitor.ramUsage!))%" : "N/A"
                 Text(ramStr)
                     .foregroundColor(ramColor)
+                    .frame(width: 30, alignment: .leading)
             }
 
             if gpuActive {
@@ -233,6 +237,7 @@ struct StatusBarLabel: View {
                 let gpuStr = statsMonitor.gpuUsage != nil ? "\(String(format: "%.0f", statsMonitor.gpuUsage!))%" : "N/A"
                 Text(gpuStr)
                     .foregroundColor(gpuColor)
+                    .frame(width: 30, alignment: .leading)
             }
 
             if batteryActive {
@@ -241,9 +246,10 @@ struct StatusBarLabel: View {
                 let battStr = statsMonitor.batteryTemperature != nil ? "\(String(format: "%.1f", statsMonitor.batteryTemperature!))°C" : "N/A"
                 Text(battStr)
                     .foregroundColor(batteryColor)
+                    .frame(width: 44, alignment: .leading)
             }
         }
-        .font(.system(size: 11, weight: .medium))
+        .font(.system(size: 11, weight: .medium).monospacedDigit())
     }
 
     private var divider: some View {
@@ -255,7 +261,7 @@ struct StatusBarLabel: View {
 // MARK: - Stats Panel (Popover Content)
 
 struct StatsPanel: View {
-    let statsMonitor: SystemStatsMonitor
+    @ObservedObject var statsMonitor: SystemStatsMonitor
     let activeModes:  Set<DisplayMode>
     let onToggle: (DisplayMode) -> Void
     let onQuit:   () -> Void
